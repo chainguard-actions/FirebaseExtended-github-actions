@@ -8,7 +8,8 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 
 | Version | Tag | Upstream commit | Hardening report |
 |---------|-----|-----------------|------------------|
-| v1.5 | [`v1.5`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/tree/v1.5) | [`57091ac`](https://github.com/FirebaseExtended/github-actions/commit/57091ac526b308ae005c6d6d59aab83d5ab2aa71) | [`firebase-test-lab`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/blob/v1.5/firebase-test-lab/HARDENING.md) |
+| v1.3 | [`v1.3`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/tree/v1.3) | [`bd94752`](https://github.com/FirebaseExtended/github-actions/commit/bd94752c1a8a56ae4cc9acbd657269daf30a40c7) | [`firebase-test-lab`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/blob/v1.3/firebase-test-lab/HARDENING.md) |
+| v1.5 | [`v1.5`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/tree/v1.5) | — | [`firebase-test-lab`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/blob/v1.5/firebase-test-lab/HARDENING.md) |
 
 ## Privacy
 
