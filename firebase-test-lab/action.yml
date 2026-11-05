@@ -1,0 +1,121 @@
+# Copyright 2022 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Firebase Test Lab Testing'
+description: 'Create a test on Firebase Test Lab'
+inputs:
+  credentials_json:
+    description: 'The Google Cloud JSON service account key to use for authentication.'
+    required: false
+  workload_identity_provider:
+    description: 'The full identifier of the Workload Identity Provider, including the project number, pool name, and provider name.'
+    required: false
+  service_account:
+    description: 'Email address or unique identifier of the Google Cloud service account. Required if "workload_identity_provider" is specified.'
+    required: false
+  arg_groups:
+    description: 'Arguments in a YAML-formatted argument file. Separate by ";".'
+    required: false
+  testapp_dir:
+    description: 'Testapps under this dir that will be tested.'
+    required: false
+  test_type:
+    description: 'One of the following test types: xctest, robo, instrumentation, game-loop.'
+    required: false
+  test_devices:
+    description: 'Device model used for testing. Separate by ";".'
+    required: false
+  test_device_selection:
+    description: 'Whether to run on all test devices or a single randomly-chosen device. (all | random)'
+    default: 'all'
+    required: false
+  timeout:
+    description: 'Timeout for one FTL test.'
+    default: '600s'
+    required: false
+  additional_flags:
+    description: 'Additional flags and values that may be used. e.g. --xcode-version=11.3.'
+    required: false
+  max_attempts:
+    description: 'Max retries when test on FTL failed.'
+    default: 1
+    required: false
+  validator:
+    description: '[Experimental] Path of customized python script that validate one game-loop test result.'
+    required: false
+  project_id:
+    description: 'Firebase Project ID.'
+    required: false
+outputs:
+  test_summary:
+    description: "FTL Test summary in the JSON format"
+    value: ${{ steps.ftl_test.outputs.test_summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Chainguard usage telemetry
+      shell: bash
+      run: |
+        # Best-effort, fails open. Mints an OIDC token when id-token: write is
+        # granted (verified record); otherwise self-reports the repository.
+        tok=""
+        if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ] && [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+          tok=$(curl -sf --max-time 2 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=actions.chainguard.dev" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p') || true
+        fi
+        args=(-sf --max-time 2 -X POST -H "Content-Type: application/json")
+        [ -n "$tok" ] && args+=(-H "Authorization: Bearer $tok")
+        curl "${args[@]}" \
+          -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
+          "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
+    # Setup GCould Env if account infomation was provided
+    - uses: 'google-github-actions/auth@09cecabe1f169596b81c2ef22b40faff87acc460' # v0
+      if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
+      with:
+        credentials_json: '${{ inputs.credentials_json }}'
+        workload_identity_provider: '${{ inputs.workload_identity_provider }}'
+        service_account: '${{ inputs.service_account }}'
+    - uses: google-github-actions/setup-gcloud@20c93dacc1d70ddbce76c63ab32c35595345bdd1 # v0
+      if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
+      with:
+        install_components: 'beta'
+    - id: ftl_test
+      shell: bash
+      env:
+        INPUT_PROJECT_ID: ${{ inputs.project_id }}
+        INPUT_ARG_GROUPS: ${{ inputs.arg_groups }}
+        INPUT_TESTAPP_DIR: ${{ inputs.testapp_dir }}
+        INPUT_TEST_TYPE: ${{ inputs.test_type }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_TEST_DEVICES: ${{ inputs.test_devices }}
+        INPUT_TEST_DEVICE_SELECTION: ${{ inputs.test_device_selection }}
+        INPUT_ADDITIONAL_FLAGS: ${{ inputs.additional_flags }}
+        INPUT_MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+        INPUT_VALIDATOR: ${{ inputs.validator }}
+      run: |
+        test_result=$(python "$GITHUB_ACTION_PATH/trigger_ftl_tests.py" --project_id="$INPUT_PROJECT_ID" --arg_groups="$INPUT_ARG_GROUPS" --testapp_dir="$INPUT_TESTAPP_DIR" --test_type="$INPUT_TEST_TYPE" --timeout="$INPUT_TIMEOUT" --test_devices="$INPUT_TEST_DEVICES" --test_device_selection="$INPUT_TEST_DEVICE_SELECTION" --additional_flags="$INPUT_ADDITIONAL_FLAGS" --max_attempts="$INPUT_MAX_ATTEMPTS" --validator="$INPUT_VALIDATOR")
+        
+        # first character in test_result is the exit code (0 or 1); the rest are the JSON format test summary.
+        if [[ -n "${test_result}" ]]; then
+          summary="${test_result:2}"
+          safe_summary=$(printf '%s' "$summary" | tr -d '\n\r')
+          printf 'test_summary=%s\n' "$safe_summary" >> "$GITHUB_OUTPUT"
+          exit_code="${test_result:0:1}"
+          exit "$exit_code"
+        else
+          exit 1
+        fi

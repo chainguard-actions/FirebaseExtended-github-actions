@@ -1,0 +1,69 @@
+name: Test robo basic usage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GCLOUD_PROJECT: my-test-project
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup environment
+        run: bash "$GITHUB_WORKSPACE/tests/fixtures/setup-env.sh"
+      - name: Create fake gcloud and testapp
+        run: |
+          mkdir -p /tmp/ftl-apps/robo
+          echo "fake apk" > /tmp/ftl-apps/robo/app.apk
+          cat > /tmp/ftl-fakebin/gcloud <<'EOF'
+          #!/bin/bash
+          echo "$*" >> /tmp/ftl-gcloud-calls.log
+          app=""
+          prev=""
+          for a in "$@"; do
+            if [ "$prev" = "--app" ]; then app="$a"; fi
+            prev="$a"
+          done
+          echo "Uploading [$app] to Firebase Test Lab..."
+          echo "Test results will be streamed to [https://console.firebase.google.com/project/my-test-project/testlab/histories/h1/matrices/m1]."
+          echo "Raw results will be stored in your GCS bucket at [https://console.developers.google.com/storage/browser/test-bucket/run1/]"
+          echo "OUTCOME: Passed"
+          echo "TEST_AXIS_VALUE: redfin-30-en-portrait"
+          echo "TEST_DETAILS: --"
+          exit 0
+          EOF
+          chmod +x /tmp/ftl-fakebin/gcloud
+      - id: action
+        uses: .
+        with:
+          testapp_dir: /tmp/ftl-apps/robo
+          test_type: robo
+          test_devices: model=redfin,version=30
+      - name: Assert test summary
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          echo "gcloud calls:"; cat /tmp/ftl-gcloud-calls.log
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def fail(msg):
+              print("FAIL: " + msg); sys.exit(1)
+          if s.get("project_id") != "my-test-project": fail("project_id %r" % s.get("project_id"))
+          apps = s["apps"]
+          if len(apps) != 1: fail("expected 1 app, got %d" % len(apps))
+          a = apps[0]
+          if a["return_code"] != 0: fail("return_code")
+          if a["attempt"] != 1: fail("attempt")
+          if a["test_type"] != "robo": fail("test_type")
+          if a["testapp_path"] != "/tmp/ftl-apps/robo/app.apk": fail("testapp_path %r" % a["testapp_path"])
+          if "matrices/m1" not in a["ftl_link"]: fail("ftl_link")
+          if "test-bucket/run1" not in a["raw_result_link"]: fail("raw_result_link")
+          exp_cmd = "gcloud firebase test android run --app /tmp/ftl-apps/robo/app.apk --type robo --timeout 600s --device model=redfin,version=30"
+          if a["cmd"] != exp_cmd: fail("cmd %r" % a["cmd"])
+          if a["devices"] != [{"device_axis": "redfin-30-en-portrait", "outcome": "Passed"}]: fail("devices %r" % a["devices"])
+          print("PASS")
+          EOF
+          if [ "$(wc -l < /tmp/ftl-gcloud-calls.log)" -ne 1 ]; then
+            echo "FAIL: expected exactly 1 gcloud call"; exit 1
+          fi

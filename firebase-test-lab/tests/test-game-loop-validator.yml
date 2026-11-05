@@ -1,0 +1,66 @@
+name: Test game-loop with custom validator and random device
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup environment
+        run: bash "$GITHUB_WORKSPACE/tests/fixtures/setup-env.sh"
+      - name: Create fake gcloud, testapp and validator
+        run: |
+          mkdir -p /tmp/ftl-apps/game /tmp/ftl-validator
+          echo "fake apk" > /tmp/ftl-apps/game/game.apk
+          cat > /tmp/ftl-validator/validator.py <<'EOF'
+          # Rejects every result so the action retries up to max_attempts.
+          def validate(test_summary):
+              with open("/tmp/ftl-validator-calls.log", "a") as f:
+                  f.write("%s\n" % test_summary.get("attempt"))
+              return False
+          EOF
+          cat > /tmp/ftl-fakebin/gcloud <<'EOF'
+          #!/bin/bash
+          echo "$*" >> /tmp/ftl-gcloud-calls.log
+          echo "OUTCOME: Passed"
+          echo "TEST_AXIS_VALUE: dev-30-en-portrait"
+          echo "TEST_DETAILS: --"
+          exit 0
+          EOF
+          chmod +x /tmp/ftl-fakebin/gcloud
+      - id: action
+        uses: .
+        with:
+          testapp_dir: /tmp/ftl-apps/game
+          test_type: game-loop
+          test_devices: model=a,version=30;model=b,version=31
+          test_device_selection: random
+          max_attempts: 2
+          validator: /tmp/ftl-validator/validator.py
+      - name: Assert validator drove retries and one random device was used
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          echo "gcloud calls:"; cat /tmp/ftl-gcloud-calls.log
+          echo "validator calls:"; cat /tmp/ftl-validator-calls.log
+          if [ "$(wc -l < /tmp/ftl-validator-calls.log)" -ne 2 ]; then
+            echo "FAIL: expected validator to be called twice"; exit 1
+          fi
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def fail(msg):
+              print("FAIL: " + msg); sys.exit(1)
+          apps = s["apps"]
+          if [a["attempt"] for a in apps] != [1, 2]: fail("attempts %r" % [a["attempt"] for a in apps])
+          for a in apps:
+              if a["test_type"] != "game-loop": fail("test_type")
+              if a["return_code"] != 0: fail("return_code")
+              cmd = a["cmd"]
+              if not cmd.startswith("gcloud firebase test android run --app /tmp/ftl-apps/game/game.apk --type game-loop"):
+                  fail("cmd %r" % cmd)
+              if cmd.count("--device") != 1: fail("expected exactly one random device in %r" % cmd)
+              if "model=a,version=30" not in cmd and "model=b,version=31" not in cmd: fail("device %r" % cmd)
+          print("PASS")
+          EOF

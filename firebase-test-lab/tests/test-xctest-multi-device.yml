@@ -1,0 +1,62 @@
+name: Test xctest with multiple devices and additional flags
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup environment
+        run: bash "$GITHUB_WORKSPACE/tests/fixtures/setup-env.sh"
+      - name: Create fake gcloud and testapp
+        run: |
+          mkdir -p /tmp/ftl-apps/ios
+          echo "fake zip" > /tmp/ftl-apps/ios/app.zip
+          echo "ignored" > /tmp/ftl-apps/ios/readme.txt
+          cat > /tmp/ftl-fakebin/gcloud <<'EOF'
+          #!/bin/bash
+          echo "$*" >> /tmp/ftl-gcloud-calls.log
+          cat <<'OUT'
+          ┌─────────┬──────────────────────────┬─────────────────────┐
+          │ OUTCOME │     TEST_AXIS_VALUE      │     TEST_DETAILS    │
+          ├─────────┼──────────────────────────┼─────────────────────┤
+          │ Passed  │ iphone8-14.7-en-portrait │ 1 test cases passed │
+          │ Passed  │ iphone11-13.6-en-portrait │ 1 test cases passed │
+          └─────────┴──────────────────────────┴─────────────────────┘
+          OUT
+          exit 0
+          EOF
+          chmod +x /tmp/ftl-fakebin/gcloud
+      - id: action
+        uses: .
+        with:
+          testapp_dir: /tmp/ftl-apps/ios
+          test_type: xctest
+          test_devices: model=iphone8,version=14.7;model=iphone11,version=13.6
+          test_device_selection: all
+          timeout: 300s
+          additional_flags: --xcode-version=13.3
+      - name: Assert test summary
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def fail(msg):
+              print("FAIL: " + msg); sys.exit(1)
+          apps = s["apps"]
+          if len(apps) != 1: fail("expected 1 app (only .zip), got %d" % len(apps))
+          a = apps[0]
+          exp = ("gcloud firebase test ios run --test /tmp/ftl-apps/ios/app.zip --type xctest --timeout 300s"
+                 " --device model=iphone8,version=14.7 --device model=iphone11,version=13.6 --xcode-version=13.3")
+          if a["cmd"] != exp: fail("cmd %r" % a["cmd"])
+          if a["test_type"] != "xctest": fail("test_type")
+          exp_dev = [
+              {"device_axis": "iphone8-14.7-en-portrait", "outcome": "Passed"},
+              {"device_axis": "iphone11-13.6-en-portrait", "outcome": "Passed"},
+          ]
+          if a["devices"] != exp_dev: fail("devices %r" % a["devices"])
+          print("PASS")
+          EOF
