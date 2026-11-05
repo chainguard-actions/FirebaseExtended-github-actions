@@ -1,15 +1,10 @@
-# FirebaseExtended/github-actions
+# Firebase GitHub Actions
 
-Create a test on Firebase Test Lab
+Hosts custom GitHub Actions created for Firebase repositories on GitHub.
 
-Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at [https://github.com/FirebaseExtended/github-actions](https://github.com/FirebaseExtended/github-actions).
+## Disclaimer
 
-## Versions
-
-| Version | Tag | Upstream commit | Hardening report |
-|---------|-----|-----------------|------------------|
-| v1.3 | [`v1.3`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/tree/v1.3) | — | [`firebase-test-lab`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/blob/v1.3/firebase-test-lab/HARDENING.md) |
-| v1.5 | [`v1.5`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/tree/v1.5) | [`57091ac`](https://github.com/FirebaseExtended/github-actions/commit/57091ac526b308ae005c6d6d59aab83d5ab2aa71) | [`firebase-test-lab`](https://github.com/chainguard-actions/FirebaseExtended-github-actions/blob/v1.5/firebase-test-lab/HARDENING.md) |
+*This is not an official Google product*.
 
 ## Privacy
 

@@ -1,0 +1,20 @@
+#!/bin/bash
+# Fake gcloud used by tests: records invocation and prints FTL-like output.
+echo "$*" >> /tmp/fake-gcloud-calls.log
+app=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--app" ]; then
+    app="$a"
+  elif [ "$prev" = "--test" ] && [ -z "$app" ]; then
+    app="$a"
+  fi
+  prev="$a"
+done
+echo "Uploading [${app}] to Firebase Test Lab..."
+echo "Test results will be streamed to [https://console.firebase.google.com/project/fake-project/testlab/histories/fake]."
+echo "Raw results will be stored in your GCS bucket at [https://console.developers.google.com/storage/browser/fake-bucket/]"
+code="${FAKE_GCLOUD_EXIT:-0}"
+if [ "$code" = "0" ]; then outcome=Passed; else outcome=Failed; fi
+printf 'OUTCOME: %s\nTEST_AXIS_VALUE: redfin-30-en-portrait\nTEST_DETAILS: --\n' "$outcome"
+exit "$code"

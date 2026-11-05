@@ -1,0 +1,43 @@
+name: Test instrumentation zip
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and python
+        run: bash tests/fixtures/setup-env.sh
+      - name: Create instrumentation zip
+        run: |
+          mkdir -p ftl-inst
+          python3 - <<'EOF'
+          import zipfile
+          with zipfile.ZipFile("ftl-inst/app.zip", "w") as z:
+              z.writestr("app-debug.apk", "app")
+              z.writestr("app-debug-test.apk", "test")
+          EOF
+      - id: action
+        uses: .
+        with:
+          testapp_dir: ftl-inst
+          test_type: instrumentation
+          test_devices: model=redfin,version=30;model=oriole,version=33
+      - name: Assert app and test apks passed
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          python3 - <<'EOF'
+          import json, os, re, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def fail(m):
+              print("FAIL: " + m); sys.exit(1)
+          if len(s["apps"]) != 1: fail("expected 1 app")
+          cmd = s["apps"][0]["cmd"]
+          if not re.search(r"--app \S*ftl-inst/app/app-debug\.apk", cmd): fail("app apk wrong: " + cmd)
+          if not re.search(r"--test \S*ftl-inst/app/app-debug-test\.apk", cmd): fail("test apk wrong: " + cmd)
+          if "--type instrumentation" not in cmd: fail("type wrong")
+          if cmd.count("--device ") != 2: fail("expected two devices (all selection)")
+          print("PASS")
+          EOF

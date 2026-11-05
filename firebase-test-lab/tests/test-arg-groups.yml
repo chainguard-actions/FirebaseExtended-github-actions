@@ -1,0 +1,32 @@
+name: Test arg_groups mode
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and python
+        run: bash tests/fixtures/setup-env.sh
+      - id: action
+        uses: .
+        with:
+          arg_groups: args.yaml:group1;args.yaml:group2
+          test_type: robo
+      - name: Assert one command per arg group
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def fail(m):
+              print("FAIL: " + m); sys.exit(1)
+          cmds = sorted(a["cmd"] for a in s["apps"])
+          expected = ["gcloud firebase test android run args.yaml:group1",
+                      "gcloud firebase test android run args.yaml:group2"]
+          if cmds != expected: fail("cmds wrong: %s" % cmds)
+          if any(a["return_code"] != 0 for a in s["apps"]): fail("return codes wrong")
+          print("PASS")
+          EOF

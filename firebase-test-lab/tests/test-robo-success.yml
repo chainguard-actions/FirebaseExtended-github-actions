@@ -1,0 +1,47 @@
+name: Test robo test success
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and python
+        run: bash tests/fixtures/setup-env.sh
+      - name: Create testapp
+        run: |
+          mkdir -p ftl-apps/sub
+          echo "fake apk" > ftl-apps/sub/app.apk
+          echo "ignored" > ftl-apps/readme.txt
+      - id: action
+        uses: .
+        with:
+          testapp_dir: ftl-apps
+          test_type: robo
+          test_devices: model=redfin,version=30
+      - name: Assert test summary
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          apps = s["apps"]
+          def fail(m):
+              print("FAIL: " + m); sys.exit(1)
+          if len(apps) != 1: fail("expected 1 app, got %d" % len(apps))
+          a = apps[0]
+          if a["return_code"] != 0: fail("return_code not 0")
+          if a["test_type"] != "robo": fail("test_type wrong")
+          if a["attempt"] != 1: fail("attempt wrong")
+          if not a["testapp_path"].endswith("ftl-apps/sub/app.apk"): fail("testapp_path wrong: " + a["testapp_path"])
+          cmd = a["cmd"]
+          for part in ["gcloud firebase test android run", "--app ", "--type robo", "--timeout 600s", "--device model=redfin,version=30"]:
+              if part not in cmd: fail("cmd missing '%s': %s" % (part, cmd))
+          if "readme.txt" in cmd: fail("non-apk file picked up")
+          if "fake-project" not in a["ftl_link"]: fail("ftl_link wrong")
+          if "fake-bucket" not in a["raw_result_link"]: fail("raw_result_link wrong")
+          if a["devices"] != [{"device_axis": "redfin-30-en-portrait", "outcome": "Passed"}]: fail("devices wrong: %s" % a["devices"])
+          print("PASS")
+          EOF
