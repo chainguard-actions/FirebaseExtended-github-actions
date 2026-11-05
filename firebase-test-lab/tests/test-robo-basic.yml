@@ -1,0 +1,52 @@
+name: Test robo basic usage
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and testapps
+        run: |
+          bash tests/fixtures/setup-fake-env.sh
+          echo "GCLOUD_PROJECT=my-fake-project" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/testapps/sub"
+          echo "fake apk" > "$RUNNER_TEMP/testapps/sub/app.apk"
+          echo "ignored" > "$RUNNER_TEMP/testapps/readme.txt"
+      - id: action
+        uses: .
+        with:
+          testapp_dir: ${{ runner.temp }}/testapps
+          test_type: robo
+          test_devices: model=redfin,version=30
+          additional_flags: --num-flaky-test-attempts=1
+      - name: Assert test summary
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "summary: $SUMMARY"
+          cat /tmp/fake-gcloud-calls.log || true
+          if [ "$OUTCOME" != "success" ]; then echo "FAIL: expected success"; exit 1; fi
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def check(cond, msg):
+              if not cond:
+                  print("FAIL: " + msg); sys.exit(1)
+          check(s["project_id"] == "my-fake-project", "project_id from GCLOUD_PROJECT")
+          apps = s["apps"]
+          check(len(apps) == 1, "exactly one app (only .apk files)")
+          a = apps[0]
+          check(a["return_code"] == 0, "return_code 0")
+          check(a["attempt"] == 1, "attempt 1")
+          check(a["test_type"] == "robo", "test_type robo")
+          check(a["testapp_path"].endswith("/testapps/sub/app.apk"), "testapp_path")
+          check(a["cmd"].startswith("gcloud firebase test android run --app "), "android cmd: " + a["cmd"])
+          check("--type robo --timeout 600s --device model=redfin,version=30 --num-flaky-test-attempts=1" in a["cmd"], "cmd flags: " + a["cmd"])
+          check(a["ftl_link"] == "https://console.firebase.google.com/project/fake-project/testlab/histories/h1/matrices/m1", "ftl_link")
+          check(a["raw_result_link"] == "https://console.developers.google.com/storage/browser/fake-bucket/", "raw_result_link")
+          check(a["devices"] == [{"device_axis": "fake-device-en-portrait", "outcome": "Passed"}], "devices: %s" % a["devices"])
+          print("PASS")
+          EOF

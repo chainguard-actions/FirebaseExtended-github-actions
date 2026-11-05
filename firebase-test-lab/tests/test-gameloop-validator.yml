@@ -1,0 +1,52 @@
+name: Test game-loop with custom validator
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud, game apps and validator
+        run: |
+          bash tests/fixtures/setup-fake-env.sh
+          mkdir -p "$RUNNER_TEMP/testapps"
+          echo "apk" > "$RUNNER_TEMP/testapps/game.apk"
+          echo "ipa" > "$RUNNER_TEMP/testapps/game.ipa"
+          cat > "$RUNNER_TEMP/validator.py" <<'EOF'
+          def validate(test_summary):
+              with open("/tmp/validator-calls.log", "a") as f:
+                  f.write(test_summary["testapp_path"] + "\n")
+              return True
+          EOF
+      - id: action
+        uses: .
+        with:
+          testapp_dir: ${{ runner.temp }}/testapps
+          test_type: game-loop
+          validator: ${{ runner.temp }}/validator.py
+      - name: Assert test summary and validator invocation
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          echo "validator calls:"; cat /tmp/validator-calls.log || true
+          if [ ! -f /tmp/validator-calls.log ] || [ "$(wc -l < /tmp/validator-calls.log)" -ne 2 ]; then
+            echo "FAIL: validator should be called twice"; exit 1
+          fi
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def check(cond, msg):
+              if not cond:
+                  print("FAIL: " + msg); sys.exit(1)
+          apps = s["apps"]
+          check(len(apps) == 2, "apk and ipa tested")
+          cmds = {os.path.basename(a["testapp_path"]): a["cmd"] for a in apps}
+          check(set(cmds) == {"game.apk", "game.ipa"}, "testapp paths: %s" % list(cmds))
+          check(cmds["game.ipa"].startswith("gcloud beta firebase test ios run --app "), "ipa cmd: " + cmds["game.ipa"])
+          check(cmds["game.apk"].startswith("gcloud firebase test android run --app "), "apk cmd: " + cmds["game.apk"])
+          for a in apps:
+              check("--type game-loop" in a["cmd"], "type")
+              check(a["return_code"] == 0, "return_code")
+          print("PASS")
+          EOF

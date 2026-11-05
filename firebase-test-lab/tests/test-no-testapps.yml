@@ -1,0 +1,30 @@
+name: Test no testapps found
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and an empty testapp dir
+        run: |
+          bash tests/fixtures/setup-fake-env.sh
+          mkdir -p "$RUNNER_TEMP/testapps"
+          echo "not an app" > "$RUNNER_TEMP/testapps/notes.txt"
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          testapp_dir: ${{ runner.temp }}/testapps
+          test_type: robo
+      - name: Assert action failed without calling gcloud
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "summary: $SUMMARY"
+          if [ "$OUTCOME" != "failure" ]; then echo "FAIL: expected failure"; exit 1; fi
+          if [ -n "$SUMMARY" ]; then echo "FAIL: expected empty summary"; exit 1; fi
+          if [ -s /tmp/fake-gcloud-calls.log ]; then echo "FAIL: gcloud should not be called"; exit 1; fi
+          echo "PASS"

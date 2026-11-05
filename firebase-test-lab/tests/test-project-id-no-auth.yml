@@ -1,0 +1,43 @@
+name: Test project_id and lone service_account skip auth
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and testapps
+        run: |
+          bash tests/fixtures/setup-fake-env.sh
+          echo "GCLOUD_PROJECT=my-fake-project" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/testapps"
+          echo "fake apk" > "$RUNNER_TEMP/testapps/app.apk"
+      - id: action
+        uses: .
+        with:
+          project_id: some-other-project
+          service_account: fake-sa@not-real.iam.gserviceaccount.com
+          testapp_dir: ${{ runner.temp }}/testapps
+          test_type: robo
+      - name: Assert FTL ran with fake gcloud (auth skipped)
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          echo "summary: $SUMMARY"
+          cat /tmp/fake-gcloud-calls.log || true
+          if [ "$OUTCOME" != "success" ]; then echo "FAIL: expected success"; exit 1; fi
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          apps = s["apps"]
+          if len(apps) != 1:
+              print("FAIL: expected one app"); sys.exit(1)
+          a = apps[0]
+          if a["return_code"] != 0 or a["test_type"] != "robo":
+              print("FAIL: unexpected app result %s" % a); sys.exit(1)
+          if not a["testapp_path"].endswith("/testapps/app.apk"):
+              print("FAIL: testapp_path"); sys.exit(1)
+          print("PASS")
+          EOF

@@ -1,0 +1,50 @@
+name: Test xctest with random device selection
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up fake gcloud and xctest zip
+        run: |
+          bash tests/fixtures/setup-fake-env.sh
+          echo table > /tmp/fake-gcloud-style
+          mkdir -p "$RUNNER_TEMP/testapps"
+          echo "fake zip" > "$RUNNER_TEMP/testapps/ios_tests.zip"
+          echo "fake apk" > "$RUNNER_TEMP/testapps/ignored.apk"
+      - id: action
+        uses: .
+        with:
+          testapp_dir: ${{ runner.temp }}/testapps
+          test_type: xctest
+          test_devices: model=iphone8,version=14.7;model=iphone11pro,version=15.0
+          test_device_selection: random
+          timeout: 300s
+      - name: Assert test summary
+        env:
+          SUMMARY: ${{ steps.action.outputs.test_summary }}
+        run: |
+          echo "summary: $SUMMARY"
+          python3 - <<'EOF'
+          import json, os, sys
+          s = json.loads(os.environ["SUMMARY"])
+          def check(cond, msg):
+              if not cond:
+                  print("FAIL: " + msg); sys.exit(1)
+          apps = s["apps"]
+          check(len(apps) == 1, "exactly one zip tested")
+          a = apps[0]
+          cmd = a["cmd"]
+          check(cmd.startswith("gcloud firebase test ios run --test "), "ios cmd: " + cmd)
+          check("ios_tests.zip" in cmd, "zip in cmd")
+          check("--type xctest --timeout 300s" in cmd, "type/timeout: " + cmd)
+          parts = cmd.split()
+          devs = [parts[i + 1] for i, p in enumerate(parts) if p == "--device"]
+          check(len(devs) == 1, "exactly one random device: %s" % devs)
+          check(devs[0] in ("model=iphone8,version=14.7", "model=iphone11pro,version=15.0"), "device value")
+          check(a["test_type"] == "xctest", "test_type")
+          check(a["return_code"] == 0, "return_code")
+          check(a["devices"] == [{"device_axis": "fake-device-en-portrait", "outcome": "Passed"}], "table parse: %s" % a["devices"])
+          print("PASS")
+          EOF
