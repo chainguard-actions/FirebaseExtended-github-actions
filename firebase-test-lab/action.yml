@@ -83,7 +83,7 @@ runs:
           -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     # Setup GCould Env if account infomation was provided
-    - uses: chainguard-actions/google-github-actions-auth@287095bcd24d9367240103631371ef5473d98385 # v3.0.0
+    - uses: chainguard-actions/google-github-actions-auth@bd3bbd8882ee8311ef35685ad3c341584e23b4d5 # v3.0.0
       if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
       with:
         credentials_json: '${{ inputs.credentials_json }}'
