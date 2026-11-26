@@ -89,7 +89,7 @@ runs:
         credentials_json: '${{ inputs.credentials_json }}'
         workload_identity_provider: '${{ inputs.workload_identity_provider }}'
         service_account: '${{ inputs.service_account }}'
-    - uses: google-github-actions/setup-gcloud@e30db14379863a8c79331b04a9969f4c1e225e0b # v1
+    - uses: chainguard-actions/google-github-actions-setup-gcloud@879dc62508cbfbd724258282452c6278a34a0e81 # v1
       if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
       with:
         install_components: 'beta'
