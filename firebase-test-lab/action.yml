@@ -83,13 +83,13 @@ runs:
           -d "{\"repository\":\"${GITHUB_REPOSITORY}\",\"action\":\"${GITHUB_ACTION_REPOSITORY}\"}" \
           "https://actions.enforce.dev/actions/v1/record" >/dev/null 2>&1 || true
     # Setup GCould Env if account infomation was provided
-    - uses: 'google-github-actions/auth@09cecabe1f169596b81c2ef22b40faff87acc460' # v0
+    - uses: 'chainguard-actions/google-github-actions-auth@c78eb9507d3bc29ecf4654d4c831b2ca472a08b5' # v0
       if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
       with:
         credentials_json: '${{ inputs.credentials_json }}'
         workload_identity_provider: '${{ inputs.workload_identity_provider }}'
         service_account: '${{ inputs.service_account }}'
-    - uses: google-github-actions/setup-gcloud@20c93dacc1d70ddbce76c63ab32c35595345bdd1 # v0
+    - uses: chainguard-actions/google-github-actions-setup-gcloud@730d1770eb2738204146ee2800554f7a9c27e266 # v0
       if: (inputs.workload_identity_provider && inputs.service_account) || inputs.credentials_json
       with:
         install_components: 'beta'
